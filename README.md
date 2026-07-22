@@ -94,6 +94,25 @@ what it did. It changes nothing else.
 will ask whether Claude's helper may control OmniFocus — click **Allow**.
 That's it.
 
+## Teach Claude your conventions (optional, recommended)
+
+The server gives Claude the *ability* to work your OmniFocus. A **skill**
+gives it the *judgement* — your structure, your flag habits, how you like
+your week planned. We ship a starter skill in [`skill/SKILL.md`](skill/SKILL.md)
+(the installer offers to set it up; it contains universal safety rules
+plus clearly-marked placeholders for your preferences).
+
+The easy way to personalise it — let Claude do it. Once the server is
+installed, say:
+
+> *"Read my omnifocus skill, look at how my OmniFocus is actually
+> organised, interview me briefly about my conventions, and personalise
+> the skill for me."*
+
+Claude will inspect your real projects, ask a few questions, and produce
+your version. Nothing about your data is in the shipped template — the
+personal details only ever live in your own copy, on your machine.
+
 ## Troubleshooting
 
 **Claude says it has no OmniFocus tools.** The app must be *fully*

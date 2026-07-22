@@ -60,7 +60,32 @@ with open(config_path, "w") as f:
 print("  config updated:", config_path)
 PY
 
-# 4. Done -------------------------------------------------------------------
+# 4. Optional starter skill -------------------------------------------------
+# A "skill" teaches Claude HOW you like your OmniFocus handled (the server
+# only provides the raw ability). We ship a starter template.
+SKILL_SRC="$PWD/skill/SKILL.md"
+SKILL_DST="$HOME/.claude/skills/omnifocus/SKILL.md"
+if [ -f "$SKILL_SRC" ] && [ -t 0 ]; then
+  printf '• Install the starter skill for Claude Code/Cowork users? [y/N] '
+  read -r REPLY || REPLY=""
+  case "$REPLY" in
+    [Yy]*)
+      mkdir -p "$(dirname "$SKILL_DST")"
+      if [ -f "$SKILL_DST" ]; then
+        cp "$SKILL_DST" "$SKILL_DST.backup-$(date +%Y%m%d-%H%M%S)"
+        say "  (existing skill backed up alongside it)"
+      fi
+      cp "$SKILL_SRC" "$SKILL_DST"
+      say "  starter skill installed: $SKILL_DST"
+      say "  Personalise it the easy way — ask Claude:"
+      say "  \"Read my omnifocus skill, look at how my OmniFocus is organised,"
+      say "   interview me briefly, and personalise it.\""
+      ;;
+    *) say "  skipped — see README ('Teach Claude your conventions') to add it later." ;;
+  esac
+fi
+
+# 5. Done -------------------------------------------------------------------
 say ""
 say "✅ Installed. Two steps left, and they're yours:"
 say ""
