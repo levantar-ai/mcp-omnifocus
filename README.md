@@ -1,83 +1,144 @@
-# omnifocus-mcp
+# OmniFocus MCP Server
 
-A local MCP server, in Go, that lets Claude read and write your OmniFocus —
-and a teaching project: the five numbered LESSON blocks in the source are
-the course, in order.
+**Let Claude read and manage your OmniFocus — safely.**
 
-## What an MCP server actually is (60 seconds)
+This is a small, open-source [MCP](https://modelcontextprotocol.io) server
+that connects the Claude desktop app to OmniFocus on your Mac. Once
+installed, you can talk to Claude about your tasks in plain English and it
+can see and organise them for you — plan your day, file tasks into
+projects, reschedule things, tick things off.
 
-The Claude desktop app launches this binary as a child process and speaks
-**JSON-RPC 2.0 over stdin/stdout** to it. On startup they shake hands; the
-server declares its **tools** (name + description + JSON Schema for inputs);
-thereafter the model calls tools and receives results. That's the whole
-protocol as far as a simple server is concerned.
+Everything runs **entirely on your Mac**. No cloud service, no account, no
+data sent anywhere — Claude talks to a tiny program on your machine, and
+that program talks to OmniFocus through Apple's own automation system
+(macOS will ask your permission the first time).
 
-Consequences worth internalising:
+## What you can say to Claude
 
-- **stdout is sacred.** It carries the protocol. Log to stderr only.
-- **The model reads your descriptions.** Tool and field descriptions are the
-  API docs the model uses to decide when and how to call you — write them well.
-- **Local stdio servers have no auth** because the boundary is the process
-  boundary: it runs as you, on your machine, launched only by your client.
+Once installed, things like this just work:
 
-## Reading order
+- *"What should I work on today?"*
+- *"What's on my plate tomorrow?"*
+- *"Add a task to my Renovation project: order paint samples, deferred to Saturday"*
+- *"Capture this meeting's actions into OmniFocus under the Acme project"*
+- *"Plan my morning — schedule those three tasks with times and durations"*
+- *"Push my 2pm focus block to 3pm and shorten it to 45 minutes"*
+- *"I've done the invoicing — tick it off"*
+- *"Put the Garden project on hold — it's a winter thing"*
+- *"Which of my projects have no next action?"*
 
-1. `main.go` — the plumbing (server, transport, the stdout rule)
-2. `tools.go` — tools as typed functions; schema from struct tags; in-band errors
-3. `bridge.go` — the seam that makes it testable; the JXA scripts
-4. `main_test.go` — what you can test off-Mac, and where that boundary sits
+## What it can do (and what it can't)
 
-## Build & run on your Mac
+Six focused capabilities:
+
+| Tool | What it does |
+|---|---|
+| `list_projects` | See your projects, their status and defer dates |
+| `list_tasks` | See tasks — names, projects, flags, defer/planned/due dates, durations |
+| `add_tasks` | Add tasks (TaskPaper format) — into a named project or the inbox, with flags, defer/planned/due dates, durations and notes |
+| `update_task` | Change fields on one task — rename, reschedule, flag, set/clear dates, set duration |
+| `complete_task` | Mark one task complete |
+| `set_project_status` | Set a project to **active** or **on-hold** — nothing else |
+
+## Is it safe? Yes — here's exactly why
+
+- **It cannot delete anything.** There is no delete capability in the code
+  at all — not for tasks, not for projects, not for anything.
+- **The strongest things it can do are reversible in OmniFocus**: marking
+  a task complete (un-completable in the app), and switching a project
+  between active and on-hold. It cannot complete or drop *projects* —
+  that's deliberately excluded.
+- **It only touches OmniFocus.** It has no access to your files, other
+  apps, or the internet.
+- **It's local and private.** The server is a single program running as
+  you, on your Mac, speaking to Claude over a private pipe. Your task data
+  never leaves your machine through this tool.
+- **macOS guards it.** The first use triggers Apple's automation
+  permission prompt — nothing happens until you approve, and you can
+  revoke it any time in System Settings → Privacy & Security → Automation.
+- **The code is small enough to read.** Six short Go files, heavily
+  commented. Don't take our word for any of this — look.
+
+## Install (10 minutes, no coding required)
+
+**You need:** a Mac with [OmniFocus](https://www.omnigroup.com/omnifocus/)
+and the [Claude desktop app](https://claude.ai/download).
+
+**1. Get the code.** Either click *Code → Download ZIP* on this repo's
+GitHub page and unzip it somewhere permanent (e.g. your home folder), or
+in Terminal:
 
 ```sh
-brew install go            # if needed
+git clone https://github.com/levantar-ai/omnifocus-mcp.git
+```
+
+**2. Install Go** (the free language this is built with). Easiest is the
+official installer from [go.dev/dl](https://go.dev/dl/) — download the
+macOS Apple Silicon `.pkg` and double-click. (If you use Homebrew:
+`brew install go`.)
+
+**3. Run the installer.** In Terminal:
+
+```sh
 cd omnifocus-mcp
-go build -o omnifocus-mcp .
+./install.sh
 ```
 
-**Verify the JXA first** (the honest step): open Script Editor, set the
-language dropdown to JavaScript, and run the body of `jxaListProjects` from
-`bridge.go`. Then try `jxaAddTasks` with a throwaway task. The two commands
-marked `⚠ VERIFY-ON-MAC` (`parseTasksInto`, `markComplete`) may need their
-spelling adjusted to your OmniFocus version — Script Editor's error messages
-will tell you. First run will trigger a macOS automation-permission prompt
-(System Settings → Privacy & Security → Automation) — approve it, or every
-call fails with a permissions error on stderr.
+The script builds the server, wires it into your Claude desktop app's
+configuration (backing up the existing config first), and tells you
+what it did. It changes nothing else.
 
-## Wire into the Claude desktop app
+**4. Restart Claude.** Fully quit (⌘Q) and reopen the Claude desktop app.
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**5. Say hello.** In a new chat: *"list my OmniFocus projects."* macOS
+will ask whether Claude's helper may control OmniFocus — click **Allow**.
+That's it.
 
-```json
-{
-  "mcpServers": {
-    "omnifocus": {
-      "command": "/absolute/path/to/omnifocus-mcp"
-    }
-  }
-}
+## Troubleshooting
+
+**Claude says it has no OmniFocus tools.** The app must be *fully*
+restarted (⌘Q, not just closing the window). If it still doesn't appear,
+your config file may have a typo — restore the backup the installer made
+(same folder, `.backup` in the name) and run `./install.sh` again.
+
+**Every request fails with "not authorised" or similar.** macOS's
+automation permission was declined or never shown. Open System Settings →
+Privacy & Security → Automation, find the omnifocus-mcp entry, and enable
+OmniFocus. Then try again.
+
+**It worked, then stopped after an update.** Re-run `./install.sh` and
+restart Claude — a rebuilt binary needs a fresh start.
+
+**Where are the logs?** `~/Library/Logs/Claude/` — each MCP server's
+output lands there, and error messages are written to be read.
+
+## Updating
+
+```sh
+cd omnifocus-mcp
+git pull
+./install.sh
 ```
 
-Restart the desktop app; the tools appear in Claude's tool list. Debugging
-loop: the app writes each server's stderr to its MCP logs
-(`~/Library/Logs/Claude/`) — your `log.Println`s land there.
+Then restart Claude. (ZIP users: download the new ZIP over the old folder
+and run `./install.sh`.)
 
-## Exercises (in ascending order of fun)
+## For the curious: this codebase is also a course
 
-1. Add a `dueWithinDays` filter to `list_tasks` — one struct field, one
-   script edit, one test.
-2. Add a `list_flagged_by_project` convenience tool. Notice the design
-   question: is a new tool better than another filter? (The model handles
-   few-well-described tools better than many overlapping ones.)
-3. Make `add_tasks` return the created tasks' ids, not just a count.
-4. Add an MCP **resource** (`taskpaper://inbox`) exposing the inbox as
-   readable context — resources are the half of MCP this project hasn't
-   touched yet, and the SDK docs' `AddResource` is the door in.
+The source is written to teach. Six numbered **LESSON** blocks walk
+through what an MCP server is and how this one works — read them in this
+order: `main.go` (the plumbing), `tools.go` (tools as typed functions),
+`bridge.go` (the seam that makes it testable, and the JXA that talks to
+OmniFocus), `taskpaper.go` (parse at the boundary you control),
+`main_test.go` (what you can test without a Mac). Run the tests with
+`go test ./...`.
 
-## Provenance
+Built in Go on the official
+[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk). Developed
+pair-programming with Claude — including, pleasingly, several bugs found
+by running against a real OmniFocus database and fixed with regression
+tests.
 
-Scaffolded pair-programming with Claude (which cannot run OmniFocus and
-therefore mocked it — see LESSON 5 for why that constraint improved the
-design). SDK: github.com/modelcontextprotocol/go-sdk v1.0.0 (pinned for
-Go 1.24; if your Mac has Go ≥1.25, `go get` the latest and nothing here
-should need to change).
+## Licence
+
+MIT — see [LICENSE](LICENSE). © 2026 Levantar AI Ltd.
