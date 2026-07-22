@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -50,6 +51,11 @@ type AddTasksInput struct {
 
 type CompleteTaskInput struct {
 	ID string `json:"id" jsonschema:"the OmniFocus task id, as returned by list_tasks"`
+}
+
+type SetProjectStatusInput struct {
+	ID     string `json:"id" jsonschema:"the OmniFocus project id, as returned by list_projects"`
+	Status string `json:"status" jsonschema:"the new status: active or on-hold (only these two — projects cannot be completed or dropped through this tool)"`
 }
 
 type UpdateTaskInput struct {
@@ -194,6 +200,24 @@ func (a *App) UpdateTask(ctx context.Context, req *mcp.CallToolRequest, in Updat
 	return textResult(out), nil, nil
 }
 
+func (a *App) SetProjectStatus(ctx context.Context, req *mcp.CallToolRequest, in SetProjectStatusInput) (*mcp.CallToolResult, any, error) {
+	if in.ID == "" {
+		return errResult(fmt.Errorf("id must not be empty")), nil, nil
+	}
+	// Normalise the friendly spellings before validating — the model may
+	// reasonably send "on hold" or "On-Hold"; the JXA side gets one form.
+	status := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(in.Status)), " ", "-")
+	if status != "active" && status != "on-hold" {
+		return errResult(fmt.Errorf("status must be active or on-hold, got %q", in.Status)), nil, nil
+	}
+	script := fmt.Sprintf(jxaSetProjectStatus, mustJSON(in.ID), mustJSON(status))
+	out, err := a.Bridge.RunJXA(ctx, script)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	return textResult(out), nil, nil
+}
+
 // Register declares the tools on the server. Kept separate from
 // main() so tests can build an identical server around a fake bridge.
 func Register(server *mcp.Server, app *App) {
@@ -221,4 +245,9 @@ func Register(server *mcp.Server, app *App) {
 		Name:        "complete_task",
 		Description: "Mark a single OmniFocus task complete, identified by the id returned from list_tasks.",
 	}, app.CompleteTask)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_project_status",
+		Description: "Set an OmniFocus project's status to active or on-hold, identified by the id from list_projects (call it with includeAll to see on-hold projects). Only these two statuses are supported — this tool cannot complete or drop a project. Returns the project's name and resulting status.",
+	}, app.SetProjectStatus)
 }

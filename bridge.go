@@ -216,6 +216,34 @@ const jxaUpdateTask = `(() => {
   return JSON.stringify(out);
 })()`
 
+// jxaSetProjectStatus flips a project between active and on-hold — the
+// two statuses deliberately supported. Done/dropped are omitted on
+// purpose: completing or abandoning a whole project is a bigger decision
+// than a task tick, and keeping the write surface small is a feature.
+// Setting an AppleScript enum from JXA needs the right spelling, which
+// varies ("on hold status" vs "on hold"); we try each and report the
+// resulting status (normalised, same as list_projects) so the model sees
+// what actually happened rather than what it asked for.
+// ⚠ VERIFY-ON-MAC: confirm which spelling your OmniFocus accepts.
+const jxaSetProjectStatus = `(() => {
+  const of = Application("OmniFocus");
+  const doc = of.defaultDocument;
+  const id = %s;
+  const status = %s; // "active" | "on-hold" — validated on the Go side
+  const p = doc.flattenedProjects().find(x => x.id() === id);
+  if (!p) { return JSON.stringify({ok: false, error: "no project with that id"}); }
+  const spellings = status === "active"
+    ? ["active status", "active"]
+    : ["on hold status", "on hold"];
+  let lastErr = null;
+  for (const s of spellings) {
+    try { p.status = s; lastErr = null; break; } catch (e) { lastErr = e; }
+  }
+  if (lastErr) { return JSON.stringify({ok: false, error: "could not set status: " + lastErr}); }
+  const clean = s => String(s).replace(" status", "").replace(/\s+/g, "-");
+  return JSON.stringify({ok: true, name: p.name(), status: clean(p.status())});
+})()`
+
 // VERIFIED-ON-MAC (2026-07): `markComplete` spelling works as-is.
 const jxaCompleteTask = `(() => {
   const of = Application("OmniFocus");

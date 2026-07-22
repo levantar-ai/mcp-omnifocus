@@ -232,6 +232,42 @@ func TestUpdateTaskValidation(t *testing.T) {
 	}
 }
 
+func TestSetProjectStatusValidation(t *testing.T) {
+	fb := &fakeBridge{}
+	app := &App{Bridge: fb}
+
+	res, _, _ := app.SetProjectStatus(context.Background(), nil, SetProjectStatusInput{Status: "active"})
+	if !res.IsError {
+		t.Fatal("missing id must error in-band")
+	}
+	res, _, _ = app.SetProjectStatus(context.Background(), nil, SetProjectStatusInput{ID: "abc", Status: "dropped"})
+	if !res.IsError {
+		t.Fatal("unsupported status must error in-band — this tool must not drop projects")
+	}
+	if fb.lastScript != "" {
+		t.Fatal("must not shell out on invalid input")
+	}
+}
+
+func TestSetProjectStatusNormalisesAndEncodes(t *testing.T) {
+	fb := &fakeBridge{reply: `{"ok":true,"name":"Lakes 2026","status":"on-hold"}`}
+	app := &App{Bridge: fb}
+
+	res, _, _ := app.SetProjectStatus(context.Background(), nil, SetProjectStatusInput{
+		ID:     `p"quote`, // hostile quotes on purpose
+		Status: "On Hold", // friendly spelling must normalise to on-hold
+	})
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %s", text(res))
+	}
+	if !strings.Contains(fb.lastScript, `\"quote`) {
+		t.Errorf("project id not JSON-encoded in script:\n%s", fb.lastScript)
+	}
+	if !strings.Contains(fb.lastScript, `"on-hold"`) {
+		t.Errorf("status not normalised to on-hold:\n%s", fb.lastScript)
+	}
+}
+
 func TestServerRegistersAllTools(t *testing.T) {
 	// Build a real server around the fake bridge and check registration
 	// succeeds — this catches schema-inference errors in input structs
