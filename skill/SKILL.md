@@ -1,6 +1,6 @@
 ---
 name: omnifocus
-description: How to work with this user's OmniFocus via the omnifocus MCP tools (list_projects, list_tasks, add_tasks, update_task, complete_task, set_project_status). Use whenever OmniFocus comes up, and also when the user asks what to work on, wants a plan or meeting outcomes captured as tasks, says "add this to my tasks", asks to tick something off, or wants help prioritising, focusing or planning their week — even if they don't name OmniFocus explicitly.
+description: How to work with this user's OmniFocus via the omnifocus MCP tools (list_projects, list_tasks, add_tasks, update_task, complete_task, set_project_status, list_folders, create_folder, rename_folder, move_project). Use whenever OmniFocus comes up, and also when the user asks what to work on, wants a plan or meeting outcomes captured as tasks, says "add this to my tasks", asks to tick something off, or wants help prioritising, focusing or planning their week — even if they don't name OmniFocus explicitly.
 ---
 
 <!--
@@ -20,9 +20,10 @@ description: How to work with this user's OmniFocus via the omnifocus MCP tools 
 
 # Working with my OmniFocus
 
-The omnifocus MCP server exposes six tools: `list_projects`, `list_tasks`,
+The omnifocus MCP server exposes ten tools: `list_projects`, `list_tasks`,
 `add_tasks` (TaskPaper in), `update_task`, `complete_task`,
-`set_project_status`. This skill is the judgement layer: my structure and
+`set_project_status`, `list_folders`, `create_folder`, `rename_folder`,
+`move_project`. This skill is the judgement layer: my structure and
 conventions, so changes land the way I'd have made them.
 
 ## My structure
@@ -48,6 +49,19 @@ fewer big ones; any naming conventions.
 - No due dates unless a real external deadline exists. Never invent
   dates to seem organised.
 - Check for existing tasks before adding — duplicates are worse than gaps.
+
+## Folders
+
+- Folders are areas, not projects — check `list_folders` before creating
+  one, and prefer filing into an existing folder over inventing a new
+  one. Duplicate names are allowed by OmniFocus but rarely wanted.
+- New projects created via `add_tasks` land at the top level; use
+  `move_project` to file them where they belong.
+- ✏️ PERSONALISE — your folder taxonomy: what the top-level folders
+  mean, when a new one is justified, any nesting conventions.
+- Folders can be created, renamed and filled — never deleted or hidden
+  through these tools. Treat renames carefully: other automations may
+  match on folder names.
 
 ## Reading and reviewing
 

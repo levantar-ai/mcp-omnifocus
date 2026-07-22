@@ -70,6 +70,8 @@ func (OsascriptBridge) RunJXA(ctx context.Context, script string) (string, error
 // %s is includeAll (boolean): by default only active projects return —
 // a real database is dominated by done/on-hold entries the model rarely
 // wants, and smaller tool results mean better model behaviour.
+// The folder field reports which area folder holds the project (null at
+// top level) — two spellings tried, since the dictionary varies.
 const jxaListProjects = `(() => {
   const of = Application("OmniFocus");
   const doc = of.defaultDocument;
@@ -85,7 +87,15 @@ const jxaListProjects = `(() => {
     // some OmniFocus version, we degrade to defer:null rather than fail.
     let defer = null;
     try { const d = p.deferDate(); defer = d ? d.toISOString() : null; } catch (e) {}
-    projects.push({id: p.id(), name: p.name(), status: status, defer: defer});
+    let folder = null;
+    try { const f = p.folder(); folder = f ? f.name() : null; }
+    catch (e) {
+      try {
+        const c = p.container();
+        if (c && String(c.class()).toLowerCase().includes("folder")) folder = c.name();
+      } catch (e2) {}
+    }
+    projects.push({id: p.id(), name: p.name(), status: status, defer: defer, folder: folder});
   }
   return JSON.stringify(projects);
 })()`
@@ -253,4 +263,79 @@ const jxaCompleteTask = `(() => {
   if (!task) { return JSON.stringify({ok: false, error: "no task with that id"}); }
   of.markComplete(task);
   return JSON.stringify({ok: true, name: task.name()});
+})()`
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Folders (v0.7). Read, create, rename, and file projects into them.
+// Deliberately absent: deleting or hiding folders — same philosophy as
+// everywhere else: the write surface stays small and nothing is ever
+// destroyed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const jxaListFolders = `(() => {
+  const of = Application("OmniFocus");
+  const doc = of.defaultDocument;
+  const folders = [];
+  for (const f of doc.flattenedFolders()) {
+    let parent = null;
+    try {
+      const c = f.container();
+      if (c && String(c.class()).toLowerCase().includes("folder")) parent = c.name();
+    } catch (e) {}
+    folders.push({id: f.id(), name: f.name(), parent: parent});
+  }
+  return JSON.stringify(folders);
+})()`
+
+// ⚠ VERIFY-ON-MAC: of.Folder(...) construction + push, and reading the
+// id back after insertion.
+const jxaCreateFolder = `(() => {
+  const of = Application("OmniFocus");
+  const doc = of.defaultDocument;
+  const name = %s;
+  const parentId = %s; // string or null
+  let parent = null;
+  if (parentId) {
+    parent = doc.flattenedFolders().find(f => f.id() === parentId);
+    if (!parent) { return JSON.stringify({ok: false, error: "no folder with that id"}); }
+  }
+  const made = of.Folder({name: name});
+  (parent ? parent.folders : doc.folders).push(made);
+  return JSON.stringify({ok: true, id: made.id(), name: made.name(), parent: parent ? parent.name() : null});
+})()`
+
+const jxaRenameFolder = `(() => {
+  const of = Application("OmniFocus");
+  const doc = of.defaultDocument;
+  const id = %s;
+  const newName = %s;
+  const f = doc.flattenedFolders().find(x => x.id() === id);
+  if (!f) { return JSON.stringify({ok: false, error: "no folder with that id"}); }
+  const oldName = f.name();
+  f.name = newName;
+  return JSON.stringify({ok: true, id: f.id(), was: oldName, name: f.name()});
+})()`
+
+// ⚠ VERIFY-ON-MAC: the standard-suite move with an insertion location —
+// of.move(p, {to: folder.projects.beginning}) — is the riskiest JXA
+// spelling in this file. If it errors, Script Editor will say so and the
+// error comes back in-band.
+const jxaMoveProject = `(() => {
+  const of = Application("OmniFocus");
+  const doc = of.defaultDocument;
+  const projectId = %s;
+  const folderId = %s; // string, or null for top level
+  const p = doc.flattenedProjects().find(x => x.id() === projectId);
+  if (!p) { return JSON.stringify({ok: false, error: "no project with that id"}); }
+  let folder = null;
+  if (folderId) {
+    folder = doc.flattenedFolders().find(f => f.id() === folderId);
+    if (!folder) { return JSON.stringify({ok: false, error: "no folder with that id"}); }
+  }
+  try {
+    of.move(p, {to: folder ? folder.projects.beginning : doc.projects.beginning});
+  } catch (e) {
+    return JSON.stringify({ok: false, error: "move failed: " + e});
+  }
+  return JSON.stringify({ok: true, name: p.name(), folder: folder ? folder.name() : null});
 })()`

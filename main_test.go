@@ -268,6 +268,88 @@ func TestSetProjectStatusNormalisesAndEncodes(t *testing.T) {
 	}
 }
 
+// ── Folder tools (v0.7) ──────────────────────────────────────────────────────
+
+func TestCreateFolderValidatesAndEncodes(t *testing.T) {
+	fb := &fakeBridge{reply: `{"ok":true,"id":"f1","name":"Clients","parent":null}`}
+	app := &App{Bridge: fb}
+
+	// Empty (and whitespace-only) names must never reach OmniFocus.
+	res, _, _ := app.CreateFolder(context.Background(), nil, CreateFolderInput{Name: "   "})
+	if !res.IsError {
+		t.Fatal("blank folder name must error in-band")
+	}
+	if fb.lastScript != "" {
+		t.Fatal("must not shell out on invalid input")
+	}
+
+	// A hostile name must arrive JSON-escaped, and no parent must arrive
+	// as a literal null the JXA side can branch on.
+	res, _, _ = app.CreateFolder(context.Background(), nil, CreateFolderInput{Name: `Clients "A" & co`})
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %s", text(res))
+	}
+	if !strings.Contains(fb.lastScript, `\"A\"`) {
+		t.Errorf("folder name not JSON-encoded in script:\n%s", fb.lastScript)
+	}
+	if !strings.Contains(fb.lastScript, "const parentId = null") {
+		t.Errorf("missing parent should splice as null:\n%s", fb.lastScript)
+	}
+
+	// With a parent, the id must be passed through encoded.
+	_, _, _ = app.CreateFolder(context.Background(), nil, CreateFolderInput{Name: "Subarea", ParentID: "pf-123"})
+	if !strings.Contains(fb.lastScript, `"pf-123"`) {
+		t.Errorf("parent id not passed through:\n%s", fb.lastScript)
+	}
+}
+
+func TestRenameFolderValidation(t *testing.T) {
+	fb := &fakeBridge{}
+	app := &App{Bridge: fb}
+
+	res, _, _ := app.RenameFolder(context.Background(), nil, RenameFolderInput{Name: "New name"})
+	if !res.IsError {
+		t.Fatal("missing id must error in-band")
+	}
+	res, _, _ = app.RenameFolder(context.Background(), nil, RenameFolderInput{ID: "f1"})
+	if !res.IsError {
+		t.Fatal("missing name must error in-band")
+	}
+	if fb.lastScript != "" {
+		t.Fatal("must not shell out on invalid input")
+	}
+}
+
+func TestMoveProjectEncodesAndDefaultsToTopLevel(t *testing.T) {
+	fb := &fakeBridge{reply: `{"ok":true,"name":"Renovation","folder":null}`}
+	app := &App{Bridge: fb}
+
+	res, _, _ := app.MoveProject(context.Background(), nil, MoveProjectInput{})
+	if !res.IsError {
+		t.Fatal("missing projectId must error in-band")
+	}
+	if fb.lastScript != "" {
+		t.Fatal("must not shell out on invalid input")
+	}
+
+	// Omitted folderId means "top level" — the JXA side sees null.
+	res, _, _ = app.MoveProject(context.Background(), nil, MoveProjectInput{ProjectID: `p"quote`})
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %s", text(res))
+	}
+	if !strings.Contains(fb.lastScript, `\"quote`) {
+		t.Errorf("project id not JSON-encoded in script:\n%s", fb.lastScript)
+	}
+	if !strings.Contains(fb.lastScript, "const folderId = null") {
+		t.Errorf("omitted folder should splice as null:\n%s", fb.lastScript)
+	}
+
+	_, _, _ = app.MoveProject(context.Background(), nil, MoveProjectInput{ProjectID: "p1", FolderID: "f9"})
+	if !strings.Contains(fb.lastScript, `"f9"`) {
+		t.Errorf("folder id not passed through:\n%s", fb.lastScript)
+	}
+}
+
 func TestServerRegistersAllTools(t *testing.T) {
 	// Build a real server around the fake bridge and check registration
 	// succeeds — this catches schema-inference errors in input structs

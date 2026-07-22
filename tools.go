@@ -69,6 +69,27 @@ type UpdateTaskInput struct {
 	EstimateMin *int   `json:"estimateMin,omitempty" jsonschema:"estimated duration in minutes; 0 clears it"`
 }
 
+// Folder inputs (v0.7). Note what's NOT here: no delete, no hide. The
+// only writes a folder can receive through this server are a better
+// name, a new child folder, or a project filed into it.
+
+type ListFoldersInput struct{}
+
+type CreateFolderInput struct {
+	Name     string `json:"name" jsonschema:"the new folder's name"`
+	ParentID string `json:"parentId,omitempty" jsonschema:"create inside the folder with this id (from list_folders); omit for a top-level folder"`
+}
+
+type RenameFolderInput struct {
+	ID   string `json:"id" jsonschema:"the OmniFocus folder id, as returned by list_folders"`
+	Name string `json:"name" jsonschema:"the folder's new name"`
+}
+
+type MoveProjectInput struct {
+	ProjectID string `json:"projectId" jsonschema:"the OmniFocus project id, as returned by list_projects"`
+	FolderID  string `json:"folderId,omitempty" jsonschema:"destination folder id (from list_folders); omit to move the project to the top level, outside any folder"`
+}
+
 // buildPatch turns the sparse input into the patch object the JXA side
 // applies. The convention: a field absent from the patch is untouched;
 // null clears. This asymmetric shape is why the input uses pointers and
@@ -218,12 +239,72 @@ func (a *App) SetProjectStatus(ctx context.Context, req *mcp.CallToolRequest, in
 	return textResult(out), nil, nil
 }
 
+// ── Folder handlers (v0.7) ───────────────────────────────────────────────────
+
+func (a *App) ListFolders(ctx context.Context, req *mcp.CallToolRequest, in ListFoldersInput) (*mcp.CallToolResult, any, error) {
+	// No inputs, no Sprintf — the script is complete as written.
+	out, err := a.Bridge.RunJXA(ctx, jxaListFolders)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	return textResult(out), nil, nil
+}
+
+func (a *App) CreateFolder(ctx context.Context, req *mcp.CallToolRequest, in CreateFolderInput) (*mcp.CallToolResult, any, error) {
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return errResult(fmt.Errorf("name must not be empty")), nil, nil
+	}
+	var parent any // null when unset → top-level folder
+	if in.ParentID != "" {
+		parent = in.ParentID
+	}
+	script := fmt.Sprintf(jxaCreateFolder, mustJSON(name), mustJSON(parent))
+	out, err := a.Bridge.RunJXA(ctx, script)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	return textResult(out), nil, nil
+}
+
+func (a *App) RenameFolder(ctx context.Context, req *mcp.CallToolRequest, in RenameFolderInput) (*mcp.CallToolResult, any, error) {
+	if in.ID == "" {
+		return errResult(fmt.Errorf("id must not be empty")), nil, nil
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return errResult(fmt.Errorf("name must not be empty")), nil, nil
+	}
+	script := fmt.Sprintf(jxaRenameFolder, mustJSON(in.ID), mustJSON(name))
+	out, err := a.Bridge.RunJXA(ctx, script)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	return textResult(out), nil, nil
+}
+
+func (a *App) MoveProject(ctx context.Context, req *mcp.CallToolRequest, in MoveProjectInput) (*mcp.CallToolResult, any, error) {
+	if in.ProjectID == "" {
+		return errResult(fmt.Errorf("projectId must not be empty")), nil, nil
+	}
+	var folder any // null = move to top level
+	if in.FolderID != "" {
+		folder = in.FolderID
+	}
+	script := fmt.Sprintf(jxaMoveProject, mustJSON(in.ProjectID), mustJSON(folder))
+	out, err := a.Bridge.RunJXA(ctx, script)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	return textResult(out), nil, nil
+}
+
 // Register declares the tools on the server. Kept separate from
 // main() so tests can build an identical server around a fake bridge.
 func Register(server *mcp.Server, app *App) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_projects",
-		Description: "List OmniFocus projects with ids, names, statuses and defer dates (ISO 8601, null if none). Active-status projects with a future defer date are scheduled, not currently live — treat the defer date as authoritative for availability.",
+		Description: "List OmniFocus projects with ids, names, statuses, defer dates (ISO 8601, null if none) and the folder each lives in (null if top-level). Active-status projects with a future defer date are scheduled, not currently live — treat the defer date as authoritative for availability.",
 	}, app.ListProjects)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -250,4 +331,24 @@ func Register(server *mcp.Server, app *App) {
 		Name:        "set_project_status",
 		Description: "Set an OmniFocus project's status to active or on-hold, identified by the id from list_projects (call it with includeAll to see on-hold projects). Only these two statuses are supported — this tool cannot complete or drop a project. Returns the project's name and resulting status.",
 	}, app.SetProjectStatus)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_folders",
+		Description: "List OmniFocus folders with their ids, names and parent folder name (null for top-level folders). Use this to see the folder structure before creating folders or moving projects.",
+	}, app.ListFolders)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_folder",
+		Description: "Create a new OmniFocus folder, optionally inside an existing folder (parentId from list_folders). Check list_folders first — OmniFocus allows duplicate folder names but they're rarely wanted. Folders cannot be deleted or hidden through this server.",
+	}, app.CreateFolder)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "rename_folder",
+		Description: "Rename an OmniFocus folder, identified by the id from list_folders. Renaming is the only change to an existing folder this server supports — folders cannot be deleted or hidden.",
+	}, app.RenameFolder)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "move_project",
+		Description: "File an OmniFocus project into a folder (projectId from list_projects, folderId from list_folders), or move it to the top level by omitting folderId. Only the project's location changes — its tasks, dates and status are untouched.",
+	}, app.MoveProject)
 }

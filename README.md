@@ -26,28 +26,35 @@ Once installed, things like this just work:
 - *"I've done the invoicing — tick it off"*
 - *"Put the Garden project on hold — it's a winter thing"*
 - *"Which of my projects have no next action?"*
+- *"Make a Clients folder and file the Acme and Beta projects into it"*
 
 ## What it can do (and what it can't)
 
-Six focused capabilities:
+Ten focused capabilities:
 
 | Tool | What it does |
 |---|---|
-| `list_projects` | See your projects, their status and defer dates |
+| `list_projects` | See your projects — status, defer dates, and which folder each lives in |
 | `list_tasks` | See tasks — names, projects, flags, defer/planned/due dates, durations |
 | `add_tasks` | Add tasks (TaskPaper format) — into a named project or the inbox, with flags, defer/planned/due dates, durations and notes |
 | `update_task` | Change fields on one task — rename, reschedule, flag, set/clear dates, set duration |
 | `complete_task` | Mark one task complete |
 | `set_project_status` | Set a project to **active** or **on-hold** — nothing else |
+| `list_folders` | See your folder structure |
+| `create_folder` | Create a folder, optionally inside another |
+| `rename_folder` | Rename a folder — the only change to an existing folder it supports |
+| `move_project` | File a project into a folder, or move it back to the top level |
 
 ## Is it safe? Yes — here's exactly why
 
 - **It cannot delete anything.** There is no delete capability in the code
-  at all — not for tasks, not for projects, not for anything.
+  at all — not for tasks, not for projects, not for folders, not for
+  anything.
 - **The strongest things it can do are reversible in OmniFocus**: marking
-  a task complete (un-completable in the app), and switching a project
-  between active and on-hold. It cannot complete or drop *projects* —
-  that's deliberately excluded.
+  a task complete (un-completable in the app), switching a project
+  between active and on-hold, and moving a project between folders
+  (drag it back). It cannot complete or drop *projects*, and it cannot
+  delete or hide *folders* — deliberately excluded.
 - **It only touches OmniFocus.** It has no access to your files, other
   apps, or the internet.
 - **It's local and private.** The server is a single program running as
@@ -56,7 +63,7 @@ Six focused capabilities:
 - **macOS guards it.** The first use triggers Apple's automation
   permission prompt — nothing happens until you approve, and you can
   revoke it any time in System Settings → Privacy & Security → Automation.
-- **The code is small enough to read.** Six short Go files, heavily
+- **The code is small enough to read.** Five short Go files, heavily
   commented. Don't take our word for any of this — look.
 
 ## Install (10 minutes, no coding required)
