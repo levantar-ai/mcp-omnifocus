@@ -272,19 +272,27 @@ const jxaCompleteTask = `(() => {
 // destroyed.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// VERIFIED-ON-MAC (2026-07, the hard way): asking each folder for its
+// container returned null parents across the board — the class-check
+// spelling doesn't hold on this dictionary. So don't ask; WALK. Starting
+// from doc.folders() (top level only) and recursing into each folder's
+// own folders(), the parent is known by construction, and we can emit a
+// full breadcrumb path as a bonus. When two ways exist to learn a fact,
+// prefer the one where the answer can't be wrong.
 const jxaListFolders = `(() => {
   const of = Application("OmniFocus");
   const doc = of.defaultDocument;
-  const folders = [];
-  for (const f of doc.flattenedFolders()) {
-    let parent = null;
-    try {
-      const c = f.container();
-      if (c && String(c.class()).toLowerCase().includes("folder")) parent = c.name();
-    } catch (e) {}
-    folders.push({id: f.id(), name: f.name(), parent: parent});
-  }
-  return JSON.stringify(folders);
+  const out = [];
+  const walk = (coll, parentName, prefix) => {
+    for (const f of coll()) {
+      const name = f.name();
+      const path = prefix ? prefix + " / " + name : name;
+      out.push({id: f.id(), name: name, parent: parentName, path: path});
+      walk(f.folders, name, path);
+    }
+  };
+  walk(doc.folders, null, "");
+  return JSON.stringify(out);
 })()`
 
 // ⚠ VERIFY-ON-MAC: of.Folder(...) construction + push, and reading the

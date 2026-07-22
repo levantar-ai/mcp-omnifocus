@@ -334,7 +334,7 @@ func Register(server *mcp.Server, app *App) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_folders",
-		Description: "List OmniFocus folders with their ids, names and parent folder name (null for top-level folders). Use this to see the folder structure before creating folders or moving projects.",
+		Description: "List OmniFocus folders with their ids, names, parent folder name (null for top-level folders) and full path (e.g. 'Family / Finances / Frugal living'), in tree order. Use this to see the folder hierarchy before creating folders or moving projects.",
 	}, app.ListFolders)
 
 	mcp.AddTool(server, &mcp.Tool{
