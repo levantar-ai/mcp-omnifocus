@@ -103,6 +103,16 @@ const jxaListTasks = `(() => {
   const tasks = [];
   for (const t of doc.flattenedTasks()) {
     if (t.completed()) continue;
+    // Dropped is a distinct state from completed in OmniFocus — a task
+    // dropped years ago is NOT available and must not be listed as such.
+    // effectivelyDropped also covers tasks inside dropped projects /
+    // parents; older dictionaries may lack it, so fall back to plain
+    // dropped, and degrade to including the task rather than failing.
+    // ⚠ VERIFY-ON-MAC: confirm both spellings in Script Editor.
+    let dropped = false;
+    try { dropped = t.effectivelyDropped(); }
+    catch (e) { try { dropped = t.dropped(); } catch (e2) {} }
+    if (dropped) continue;
     if (flaggedOnly && !t.flagged()) continue;
     const proj = t.containingProject();
     const projName = proj ? proj.name() : null;
