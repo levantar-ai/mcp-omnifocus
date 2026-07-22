@@ -1,4 +1,4 @@
-module github.com/levantar-ai/omnifocus-mcp
+module github.com/levantar-ai/mcp-omnifocus
 
 go 1.24.7
 

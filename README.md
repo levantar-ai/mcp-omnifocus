@@ -69,7 +69,7 @@ GitHub page and unzip it somewhere permanent (e.g. your home folder), or
 in Terminal:
 
 ```sh
-git clone https://github.com/levantar-ai/omnifocus-mcp.git
+git clone https://github.com/levantar-ai/mcp-omnifocus.git
 ```
 
 **2. Install Go** (the free language this is built with). Easiest is the
@@ -80,7 +80,7 @@ macOS Apple Silicon `.pkg` and double-click. (If you use Homebrew:
 **3. Run the installer.** In Terminal:
 
 ```sh
-cd omnifocus-mcp
+cd mcp-omnifocus
 ./install.sh
 ```
 
@@ -115,7 +115,7 @@ output lands there, and error messages are written to be read.
 ## Updating
 
 ```sh
-cd omnifocus-mcp
+cd mcp-omnifocus
 git pull
 ./install.sh
 ```
