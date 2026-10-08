@@ -100,9 +100,29 @@ const jxaListProjects = `(() => {
   return JSON.stringify(projects);
 })()`
 
-// jxaListTasks filters in plain JavaScript rather than using JXA's
-// `whose` clauses — `whose` is faster but famously fragile. For a
-// personal database (hundreds of tasks) the simple way is fine.
+// jxaListTasks reads each property for ALL tasks in one Apple event
+// (tasks.name(), tasks.id(), ...) and filters in plain JavaScript,
+// instead of looping over every task and asking ~10 questions per task.
+// Field note (2026-10): with ~1200 tasks (700 of them completed) the
+// per-task loop took ~41 s for list_tasks; this takes ~1 s. What the
+// measuring taught us (all on the same database):
+//   - Bulk-reading a property over the whole flattenedTasks collection
+//     costs 20-150 ms per property (~0.5 s for all of them).
+//   - A `whose` clause looks like the obvious optimisation but is NOT:
+//     the specifier is re-evaluated on every property read (~5 s each),
+//     so ten reads on 500 matches cost ~50 s. Do not filter with `whose`
+//     and then bulk-read; bulk-read first, filter after.
+//   - Bulk-reading tags per task (tasks.tags.name()) is catastrophically
+//     slow (>2 min). Instead ask each TAG for its task ids (a handful of
+//     tags) and join in JS: ~0.7 s.
+//   - Every optional property is read inside its own try, so a missing
+//     spelling degrades to null instead of failing the whole call.
+//
+// Behaviour change vs. the per-task loop: a project's ROOT task (the
+// project itself, which doc.flattenedTasks also returns, id == project id)
+// is no longer listed as if it were a task. Projects belong to
+// list_projects.
+//
 // %s placeholders are filled by Go with JSON-encoded values, which is
 // our injection-safety mechanism: the filter arrives as data, not code.
 const jxaListTasks = `(() => {
@@ -110,44 +130,60 @@ const jxaListTasks = `(() => {
   const doc = of.defaultDocument;
   const wantProject = %s;   // string or null
   const flaggedOnly = %s;   // boolean
-  const tasks = [];
-  for (const t of doc.flattenedTasks()) {
-    if (t.completed()) continue;
-    // Dropped is a distinct state from completed in OmniFocus — a task
-    // dropped years ago is NOT available and must not be listed as such.
-    // effectivelyDropped also covers tasks inside dropped projects /
-    // parents; older dictionaries may lack it, so fall back to plain
-    // dropped, and degrade to including the task rather than failing.
-    // ⚠ VERIFY-ON-MAC: confirm both spellings in Script Editor.
-    let dropped = false;
-    try { dropped = t.effectivelyDropped(); }
-    catch (e) { try { dropped = t.dropped(); } catch (e2) {} }
-    if (dropped) continue;
-    if (flaggedOnly && !t.flagged()) continue;
-    const proj = t.containingProject();
-    const projName = proj ? proj.name() : null;
+  const read = (get) => { try { return get(); } catch (e) { return null; } };
+  const T = doc.flattenedTasks;
+  const completed = T.completed();
+  const flagged = T.flagged();
+  const ids = T.id(), names = T.name();
+  const projs = read(() => T.containingProject.name());
+  const due = read(() => T.dueDate());
+  const defer = read(() => T.deferDate());
+  const planned = read(() => T.plannedDate());
+  const est = read(() => T.estimatedMinutes());
+  // Dropped is a distinct state from completed in OmniFocus — a task
+  // dropped years ago is NOT available and must not be listed as such.
+  // effectivelyDropped also covers tasks inside dropped projects /
+  // parents; older dictionaries may lack it, so fall back to plain
+  // dropped, and degrade to including the task rather than failing.
+  const dropped = read(() => T.effectivelyDropped()) || read(() => T.dropped());
+  const rootIds = new Set(doc.flattenedProjects.id());
+  const iso = (arr, i) => (arr && arr[i] ? arr[i].toISOString() : null);
+  const rows = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (completed[i]) continue;
+    if (flaggedOnly && !flagged[i]) continue;
+    if (dropped && dropped[i]) continue;
+    if (rootIds.has(ids[i])) continue;
+    const projName = projs && projs[i] ? projs[i] : null;
     if (wantProject && projName !== wantProject) continue;
-    const due = t.dueDate();
-    const row = {
-      id: t.id(),
-      name: t.name(),
+    rows.push({
+      id: ids[i],
+      name: names[i],
       project: projName,
-      flagged: t.flagged(),
-      due: due ? due.toISOString() : null,
-      defer: null, planned: null, estimateMin: null, tags: [],
-    };
-    try { const d = t.deferDate(); row.defer = d ? d.toISOString() : null; } catch (e) {}
-    try { const p = t.plannedDate(); row.planned = p ? p.toISOString() : null; } catch (e) {}
-    try { const m = t.estimatedMinutes(); row.estimateMin = m || null; } catch (e) {}
-    // Tags, read-only (v0.8). Added the day a tag became an assignment
-    // convention — "andy rea" on a task marks it as handed to Andy's
-    // co-founder in the collaboration bridge. Degrades to [] if the
-    // spelling differs on some OmniFocus version.
-    // ⚠ VERIFY-ON-MAC: t.tags() and tag.name().
-    try { row.tags = t.tags().map(tg => tg.name()); } catch (e) {}
-    tasks.push(row);
+      flagged: flagged[i],
+      due: iso(due, i),
+      defer: iso(defer, i),
+      planned: iso(planned, i),
+      estimateMin: (est && est[i]) || null,
+      tags: [],
+    });
   }
-  return JSON.stringify(tasks);
+  if (rows.length > 0) {
+    const byId = {};
+    for (const r of rows) byId[r.id] = r;
+    // Tags, read-only (v0.8): "andy rea" on a task marks it as handed to
+    // Andy's co-founder in the collaboration bridge. Join from the tag
+    // side (see header note); degrades to [] if the spelling differs.
+    try {
+      for (const tg of doc.flattenedTags()) {
+        const tname = tg.name();
+        let tids = [];
+        try { tids = tg.tasks.id(); } catch (e) {}
+        for (const id of tids) if (byId[id]) byId[id].tags.push(tname);
+      }
+    } catch (e) {}
+  }
+  return JSON.stringify(rows);
 })()`
 
 // jxaAddTasks v2. Field evidence killed the transport-text approach: it
